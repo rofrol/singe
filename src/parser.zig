@@ -10,7 +10,7 @@ pub const Pos = struct {
         return Pos{ .start = start, .end = end };
     }
 
-    pub fn string(p: Pos, text: []const u8) []u8 {
+    pub fn string(p: Pos, text: []const u8) []const u8 {
         return text[p.start..p.end];
     }
 };
@@ -22,6 +22,7 @@ pub const Token = union(enum) {
     // Identifiers & literals
     ident: Pos,
     int: Pos,
+    string: Pos,
 
     // op
     assign: Pos,
@@ -85,16 +86,16 @@ pub const Lexer = struct {
                 '.' => Token{ .dot = Pos.new(self.offset, self.offset + 1) },
                 ':' => Token{ .colon = Pos.new(self.offset, self.offset + 1) },
                 '+' => Token{ .plus = Pos.new(self.offset, self.offset + 1) },
-                '=' => if (self.offset + 1 < self.text.len and self.text[self.offset + 1] == '=') {
+                '=' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
                     defer self.offset += 2;
                     return Token{ .eq = Pos.new(self.offset, self.offset + 2) };
                 } else Token{ .assign = Pos.new(self.offset, self.offset + 1) },
                 '-' => Token{ .minus = Pos.new(self.offset, self.offset + 1) },
-                '<' => if (self.offset + 1 < self.text.len and self.text[self.offset + 1] == '=') {
+                '<' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
                     defer self.offset += 2;
                     return Token{ .le = Pos.new(self.offset, self.offset + 2) };
                 } else Token{ .lt = Pos.new(self.offset, self.offset + 1) },
-                '>' => if (self.offset + 1 < self.text.len and self.text[self.offset + 1] == '=') {
+                '>' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
                     defer self.offset += 2;
                     return Token{ .ge = Pos.new(self.offset, self.offset + 2) };
                 } else Token{ .gt = Pos.new(self.offset, self.offset + 1) },
@@ -104,6 +105,17 @@ pub const Lexer = struct {
                     defer self.offset += 2;
                     return Token{ .neq = Pos.new(self.offset, self.offset + 2) };
                 } else Token{ .bang = Pos.new(self.offset, self.offset + 1) },
+                '"' => {
+                    const start = self.offset + 1;
+
+                    var end = start;
+                    while (end < self.input.len and (self.input[end] != '"' or self.input[end - 1] == '\\')) : (end += 1) {}
+
+                    defer self.offset = end + 1;
+                    if (end == self.input.len) return Token{ .illegal = Pos.new(start, end) };
+
+                    return Token{ .string = Pos.new(start, end) };
+                },
                 else => null,
             }) |tok| {
                 self.offset += 1;
@@ -195,6 +207,26 @@ test "lexer" {
         try testing.expectEqual(l.next(), Token{ .int = Pos.new(8, 10) });
         try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(10, 11) });
         try testing.expectEqual(l.next(), Token{ .eof = Pos.new(11, 11) });
+    }
+    {
+        var l = Lexer.init("let hello_world = \"hello world\";");
+        try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
+        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 15) });
+        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(16, 17) });
+        const hello_world = l.next();
+        try testing.expectEqual(hello_world, Token{ .string = Pos.new(19, 30) });
+        try testing.expectEqualStrings(hello_world.string.string(l.input), "hello world");
+        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(31, 32) });
+    }
+    {
+        var l = Lexer.init(
+            \\"\"hello world\""
+        );
+        const hello_world = l.next();
+        try testing.expectEqual(hello_world, Token{ .string = Pos.new(1, 16) });
+        try testing.expectEqualStrings(hello_world.string.string(l.input),
+            \\\"hello world\"
+        );
     }
     {
         var l = Lexer.init(
