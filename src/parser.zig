@@ -1,337 +1,143 @@
 const std = @import("std");
-const testing = std.testing;
 const mem = std.mem;
+const testing = std.testing;
+const fmt = std.fmt;
+const ArrayList = std.ArrayList;
+const lexer = @import("lexer.zig");
+const Token = lexer.Token;
+const Pos = lexer.Pos;
+const Lexer = lexer.Lexer;
 
-pub const Pos = struct {
-    start: usize,
-    end: usize,
-
-    pub fn new(start: usize, end: usize) Pos {
-        return Pos{ .start = start, .end = end };
-    }
-
-    pub fn string(p: Pos, text: []const u8) []const u8 {
-        return text[p.start..p.end];
+const Ident = struct {
+    pos: Pos,
+    fn string(i: Ident, input: []const u8) []const u8 {
+        return i.pos.string(input);
     }
 };
 
-pub const Token = union(enum) {
-    illegal: Pos,
-    eof: Pos,
-
-    // Identifiers & literals
-    ident: Pos,
-    int: Pos,
-    string: Pos,
-
-    // op
-    assign: Pos,
-    plus: Pos,
-    minus: Pos,
-    eq: Pos,
-    neq: Pos,
-    lt: Pos,
-    gt: Pos,
-    ge: Pos,
-    le: Pos,
-    slash: Pos,
-    star: Pos,
-    bang: Pos,
-
-    // Delimiters
-    lparen: Pos,
-    rparen: Pos,
-    lbrace: Pos,
-    rbrace: Pos,
-    lbracket: Pos,
-    rbracket: Pos,
-    semicolon: Pos,
-    comma: Pos,
-    dot: Pos,
-    colon: Pos,
-
-    // Keywords
-    func: Pos,
-    let: Pos,
-    @"if": Pos,
-    @"else": Pos,
-    @"return": Pos,
-    @"true": Pos,
-    @"false": Pos,
-    @"nil": Pos,
-    @"for": Pos,
+const Statement = struct {
+    token: Token,
+    ident: Ident,
+    value: Expr,
 };
 
-pub const Lexer = struct {
-    input: []const u8,
-    offset: usize = 0,
+const Expr = struct {
+    value: Token,
+};
+
+const ErrorQueue = struct {
+    alloc: mem.Allocator,
+
+    errors: ArrayList([]const u8),
 
     const Self = @This();
-    pub fn init(input: []const u8) Self {
-        return Self{ .input = input };
+    pub fn init(alloc: mem.Allocator) ErrorQueue {
+        return ErrorQueue{
+            .alloc = alloc,
+            .errors = ArrayList([]const u8).init(alloc),
+        };
     }
 
-    pub fn next(self: *Self) Token {
-        while (self.offset < self.input.len) {
-            self.eatWhileAnyOf(" \t\r\n");
-            if (switch (self.input[self.offset]) {
-                '(' => Token{ .lparen = Pos.new(self.offset, self.offset + 1) },
-                ')' => Token{ .rparen = Pos.new(self.offset, self.offset + 1) },
-                '{' => Token{ .lbracket = Pos.new(self.offset, self.offset + 1) },
-                '}' => Token{ .rbracket = Pos.new(self.offset, self.offset + 1) },
-                '[' => Token{ .lbrace = Pos.new(self.offset, self.offset + 1) },
-                ']' => Token{ .rbrace = Pos.new(self.offset, self.offset + 1) },
-                ';' => Token{ .semicolon = Pos.new(self.offset, self.offset + 1) },
-                ',' => Token{ .comma = Pos.new(self.offset, self.offset + 1) },
-                '.' => Token{ .dot = Pos.new(self.offset, self.offset + 1) },
-                ':' => Token{ .colon = Pos.new(self.offset, self.offset + 1) },
-                '+' => Token{ .plus = Pos.new(self.offset, self.offset + 1) },
-                '=' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
-                    defer self.offset += 2;
-                    return Token{ .eq = Pos.new(self.offset, self.offset + 2) };
-                } else Token{ .assign = Pos.new(self.offset, self.offset + 1) },
-                '-' => Token{ .minus = Pos.new(self.offset, self.offset + 1) },
-                '<' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
-                    defer self.offset += 2;
-                    return Token{ .le = Pos.new(self.offset, self.offset + 2) };
-                } else Token{ .lt = Pos.new(self.offset, self.offset + 1) },
-                '>' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
-                    defer self.offset += 2;
-                    return Token{ .ge = Pos.new(self.offset, self.offset + 2) };
-                } else Token{ .gt = Pos.new(self.offset, self.offset + 1) },
-                '*' => Token{ .star = Pos.new(self.offset, self.offset + 1) },
-                '/' => Token{ .slash = Pos.new(self.offset, self.offset + 1) },
-                '!' => if (self.offset + 1 < self.input.len and self.input[self.offset + 1] == '=') {
-                    defer self.offset += 2;
-                    return Token{ .neq = Pos.new(self.offset, self.offset + 2) };
-                } else Token{ .bang = Pos.new(self.offset, self.offset + 1) },
-                '"' => {
-                    const start = self.offset + 1;
+    pub fn print(self: *Self, comptime format: []const u8, args: anytype) void {
+        const err = fmt.allocPrint(self.alloc, format, args) catch return;
+        self.errors.append(err) catch {};
+    }
 
-                    var end = start;
-                    while (end < self.input.len and (self.input[end] != '"' or self.input[end - 1] == '\\')) : (end += 1) {}
-
-                    defer self.offset = end + 1;
-                    if (end == self.input.len) return Token{ .illegal = Pos.new(start, end) };
-
-                    return Token{ .string = Pos.new(start, end) };
-                },
-                else => null,
-            }) |tok| {
-                self.offset += 1;
-                return tok;
-            }
-
-            const t = if (mem.tokenize(u8, self.input[self.offset..], " \t\n\r;(){}[],.:+=").next()) |n| n else break;
-
-            defer self.offset += t.len;
-            return if (mem.eql(u8, t, "let"))
-                Token{ .let = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "fn"))
-                Token{ .func = Pos.new(self.offset, self.offset + t.len) }
-            else if (containsOnlyAnyOf(u8, t, "0123456789"))
-                Token{ .int = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "<="))
-                Token{ .le = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, ">="))
-                Token{ .ge = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "=="))
-                Token{ .eq = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "!="))
-                Token{ .neq = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "true"))
-                Token{ .@"true" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "false"))
-                Token{ .@"false" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "nil"))
-                Token{ .@"nil" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "if"))
-                Token{ .@"if" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "else"))
-                Token{ .@"else" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "return"))
-                Token{ .@"return" = Pos.new(self.offset, self.offset + t.len) }
-            else if (mem.eql(u8, t, "for"))
-                Token{ .@"for" = Pos.new(self.offset, self.offset + t.len) }
-            else
-                Token{ .ident = Pos.new(self.offset, self.offset + t.len) };
+    pub fn deinit(self: *Self) void {
+        for (self.errors.items) |err| {
+            self.alloc.free(err);
         }
-
-        return Token{ .eof = Pos.new(self.offset, self.offset) };
-    }
-
-    fn containsOnlyAnyOf(comptime T: type, haystack: []const T, needle_stack: []const T) bool {
-        for (haystack) |x| {
-            for (needle_stack) |y| {
-                if (x == y) break;
-            } else return false;
-        }
-        return true;
-    }
-
-    fn eatWhileAnyOf(self: *Self, needle_stack: []const u8) void {
-        while (self.offset + 1 < self.input.len) : (self.offset += 1) {
-            if (!containsOnlyAnyOf(u8, self.input[self.offset .. self.offset + 1], needle_stack)) break;
-        }
-    }
-
-    test "containsOnlyAnyOf" {
-        try testing.expect(containsOnlyAnyOf(u8, "15632", "0123456789"));
-        try testing.expect(containsOnlyAnyOf(u8, "abc", "abcd"));
-        try testing.expect(!containsOnlyAnyOf(u8, "abc", "ab"));
+        self.errors.deinit();
     }
 };
 
-test "lexer" {
-    {
-        var l = Lexer.init("");
-        try testing.expect(l.next() == .eof);
+const Parser = struct {
+    lex: Lexer,
+    err: ErrorQueue,
+
+    const Self = @This();
+    pub fn init(alloc: mem.Allocator, input: []const u8) Parser {
+        return Self{
+            .lex = Lexer.init(input),
+            .err = ErrorQueue.init(alloc),
+        };
     }
-    {
-        var l = Lexer.init(";;;");
-        try testing.expect(l.next() == .semicolon);
-        try testing.expect(l.next() == .semicolon);
-        try testing.expect(l.next() == .semicolon);
-        try testing.expect(l.next() == .eof);
+
+    pub fn deinit(s: *Self) void {
+        s.err.deinit();
     }
-    {
-        var l = Lexer.init("let");
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-        try testing.expectEqual(l.next(), Token{ .eof = Pos.new(3, 3) });
+
+    pub fn writeErr(s: *Self, writer: anytype) void {
+        for (s.err.errors.items) |err| {
+            writer.writeAll(err) catch {};
+            writer.writeAll("\n") catch {};
+        }
     }
-    {
-        var l = Lexer.init("let a = 27;");
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 5) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(6, 7) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(8, 10) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(10, 11) });
-        try testing.expectEqual(l.next(), Token{ .eof = Pos.new(11, 11) });
+
+    pub fn next(s: *Self) ?Statement {
+        const tok = s.lex.next();
+        switch (tok) {
+            .let => return s.parseLet(tok.let),
+            else => s.err.print("expected 'let' but got '{s}' at {s}", .{ tok, tok.pos().string(s.lex.input) }),
+        }
+        return null;
     }
-    {
-        var l = Lexer.init("let hello_world = \"hello world\";");
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 15) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(16, 17) });
-        const hello_world = l.next();
-        try testing.expectEqual(hello_world, Token{ .string = Pos.new(19, 30) });
-        try testing.expectEqualStrings(hello_world.string.string(l.input), "hello world");
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(31, 32) });
+
+    fn parseLet(s: *Self, let: Pos) ?Statement {
+        const ident = s.lex.next();
+        if (!s.expectAnyTok(&.{Token.parse("a")}, ident)) return null;
+
+        const assign = s.lex.next();
+        if (!s.expectAnyTok(&.{Token.parse("=")}, assign)) return null;
+
+        const value = s.lex.next();
+        if (!(s.expectAnyTok(&.{ Token.parse("0"), Token.parse("\"\"") }, value))) return null;
+
+        const semco = s.lex.next();
+        if (!s.expectAnyTok(&.{Token.parse(";")}, semco)) return null;
+
+        return Statement{
+            .token = .{ .let = let },
+            .ident = Ident{ .pos = ident.pos() },
+            .value = Expr{ .value = value },
+        };
     }
-    {
-        var l = Lexer.init(
-            \\"\"hello world\""
-        );
-        const hello_world = l.next();
-        try testing.expectEqual(hello_world, Token{ .string = Pos.new(1, 16) });
-        try testing.expectEqualStrings(hello_world.string.string(l.input),
-            \\\"hello world\"
-        );
+
+    fn expectAnyTok(self: *Self, expect: []const Token, got: Token) bool {
+        for (expect) |e| if (@enumToInt(got) == @enumToInt(e)) return true;
+
+        self.err.print("expected '{s}' but got '{s}' at {s}", .{ expect, got, got.pos().string(self.lex.input) });
+        return false;
     }
-    {
-        var l = Lexer.init(
-            \\let five = 5;
-            \\let ten = 10;
-            \\
-            \\let add = fn(x, y) {
-            \\  x + y;
-            \\};
-            \\
-            \\let result = add(five, ten);
-            \\!-/*5;
-            \\5 < 10 > 5;
-            \\
-            \\if (5 < 10) {
-            \\  return true;
-            \\} else {
-            \\  return false;
-            \\}
-            \\
-            \\10 == 10;
-            \\10 != 9;
-            \\5 <= 10;
-            \\12 >= 10;
-        );
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 8) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(9, 10) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(11, 12) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(12, 13) });
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(14, 17) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(18, 21) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(22, 23) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(24, 26) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(26, 27) });
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(29, 32) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(33, 36) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(37, 38) });
-        try testing.expectEqual(l.next(), Token{ .func = Pos.new(39, 41) });
-        try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(41, 42) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(42, 43) });
-        try testing.expectEqual(l.next(), Token{ .comma = Pos.new(43, 44) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(45, 46) });
-        try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(46, 47) });
-        try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(48, 49) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(52, 53) });
-        try testing.expectEqual(l.next(), Token{ .plus = Pos.new(54, 55) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(56, 57) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(57, 58) });
-        try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(59, 60) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(60, 61) });
-        try testing.expectEqual(l.next(), Token{ .let = Pos.new(63, 66) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(67, 73) });
-        try testing.expectEqual(l.next(), Token{ .assign = Pos.new(74, 75) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(76, 79) });
-        try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(79, 80) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(80, 84) });
-        try testing.expectEqual(l.next(), Token{ .comma = Pos.new(84, 85) });
-        try testing.expectEqual(l.next(), Token{ .ident = Pos.new(86, 89) });
-        try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(89, 90) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(90, 91) });
-        try testing.expectEqual(l.next(), Token{ .bang = Pos.new(92, 93) });
-        try testing.expectEqual(l.next(), Token{ .minus = Pos.new(93, 94) });
-        try testing.expectEqual(l.next(), Token{ .slash = Pos.new(94, 95) });
-        try testing.expectEqual(l.next(), Token{ .star = Pos.new(95, 96) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(96, 97) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(97, 98) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(99, 100) });
-        try testing.expectEqual(l.next(), Token{ .lt = Pos.new(101, 102) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(103, 105) });
-        try testing.expectEqual(l.next(), Token{ .gt = Pos.new(106, 107) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(108, 109) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(109, 110) });
-        try testing.expectEqual(l.next(), Token{ .@"if" = Pos.new(112, 114) });
-        try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(115, 116) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(116, 117) });
-        try testing.expectEqual(l.next(), Token{ .lt = Pos.new(118, 119) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(120, 122) });
-        try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(122, 123) });
-        try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(124, 125) });
-        try testing.expectEqual(l.next(), Token{ .@"return" = Pos.new(128, 134) });
-        try testing.expectEqual(l.next(), Token{ .@"true" = Pos.new(135, 139) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(139, 140) });
-        try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(141, 142) });
-        try testing.expectEqual(l.next(), Token{ .@"else" = Pos.new(143, 147) });
-        try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(148, 149) });
-        try testing.expectEqual(l.next(), Token{ .@"return" = Pos.new(152, 158) });
-        try testing.expectEqual(l.next(), Token{ .@"false" = Pos.new(159, 164) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(164, 165) });
-        try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(166, 167) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(169, 171) });
-        try testing.expectEqual(l.next(), Token{ .eq = Pos.new(172, 174) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(175, 177) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(177, 178) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(179, 181) });
-        try testing.expectEqual(l.next(), Token{ .neq = Pos.new(182, 184) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(185, 186) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(186, 187) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(188, 189) });
-        try testing.expectEqual(l.next(), Token{ .le = Pos.new(190, 192) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(193, 195) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(195, 196) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(197, 199) });
-        try testing.expectEqual(l.next(), Token{ .ge = Pos.new(200, 202) });
-        try testing.expectEqual(l.next(), Token{ .int = Pos.new(203, 205) });
-        try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(205, 206) });
+};
+
+test "let assign value" {
+    const input = "let a = \"hello world\";";
+    var p = Parser.init(testing.allocator, input);
+    defer p.deinit();
+    if (p.next()) |node| {
+        try testing.expectEqualStrings(node.token.pos().string(input), "let");
+        try testing.expectEqualStrings(node.ident.pos.string(input), "a");
+        try testing.expectEqualStrings(node.value.value.pos().string(input), "\"hello world\"");
     }
+
+    if (p.err.errors.items.len != 0) {
+        var out = ArrayList(u8).init(testing.allocator);
+        defer out.deinit();
+        p.writeErr(out.writer());
+        try testing.expectEqualStrings(out.items, "");
+    }
+}
+
+test "no semicolon" {
+    const input = "let a = 12";
+    var p = Parser.init(testing.allocator, input);
+    defer p.deinit();
+    if (p.next()) |node| {
+        try testing.expectEqualStrings(node.token.pos().string(input), "let");
+        try testing.expectEqualStrings(node.ident.pos.string(input), "a");
+        try testing.expectEqualStrings(node.value.value.pos().string(input), "12");
+    }
+
+    if (p.err.errors.items.len < 1) std.log.err("expected an error but got {}", .{p.err.errors.items.len});
 }
