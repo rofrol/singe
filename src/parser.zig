@@ -21,8 +21,9 @@ const Statement = struct {
     value: Expr,
 };
 
-const Expr = struct {
+const Expr = union {
     value: Token,
+    functon: []Statement,
 };
 
 const ErrorQueue = struct {

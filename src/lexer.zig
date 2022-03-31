@@ -45,6 +45,7 @@ pub const Token = union(enum) {
     slash: Pos,
     star: Pos,
     bang: Pos,
+    percent: Pos,
 
     // Delimiters
     lparen: Pos,
@@ -87,6 +88,7 @@ pub const Token = union(enum) {
             .le => return t.le,
             .slash => return t.slash,
             .star => return t.star,
+            .percent => return t.percent,
             .bang => return t.bang,
             .lparen => return t.lparen,
             .rparen => return t.rparen,
@@ -145,6 +147,7 @@ pub const Token = union(enum) {
                 Token{ .gt = Pos.new(offset, offset + 1) },
             '*' => Token{ .star = Pos.new(offset, offset + 1) },
             '/' => Token{ .slash = Pos.new(offset, offset + 1) },
+            '%' => Token{ .percent = Pos.new(offset, offset + 1) },
             '!' => if (offset + 1 < input.len and input[offset + 1] == '=')
                 Token{ .neq = Pos.new(offset, offset + 2) }
             else
@@ -161,7 +164,7 @@ pub const Token = union(enum) {
             else => null,
         }) |tok| return tok;
 
-        const t = if (mem.tokenize(u8, input[offset..], " \t\n\r;(){}[],.:+=").next()) |n| n else return Token{ .eof = Pos.new(offset, offset) };
+        const t = if (mem.tokenize(u8, input[offset..], " \t\n\r;(){}[],.:+=+*-/%").next()) |n| n else return Token{ .eof = Pos.new(offset, offset) };
         return if (mem.eql(u8, t, "let"))
             Token{ .let = Pos.new(offset, offset + t.len) }
         else if (mem.eql(u8, t, "fn"))
@@ -277,6 +280,25 @@ test "let string" {
     try testing.expectEqual(hello_world, Token{ .string = Pos.new(18, 31) });
     try testing.expectEqualStrings(hello_world.string.string(l.input), "\"hello world\"");
     try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(31, 32) });
+}
+
+test "math" {
+    var l = Lexer.init("let y = 7*7 + 42/2 - 14 % 5;");
+    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
+    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 5) });
+    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(6, 7) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(8, 9) });
+    try testing.expectEqual(l.next(), Token{ .star = Pos.new(9, 10) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(10, 11) });
+    try testing.expectEqual(l.next(), Token{ .plus = Pos.new(12, 13) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(14, 16) });
+    try testing.expectEqual(l.next(), Token{ .slash = Pos.new(16, 17) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(17, 18) });
+    try testing.expectEqual(l.next(), Token{ .minus = Pos.new(19, 20) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(21, 23) });
+    try testing.expectEqual(l.next(), Token{ .percent = Pos.new(24, 25) });
+    try testing.expectEqual(l.next(), Token{ .int = Pos.new(26, 27) });
+    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(27, 28) });
 }
 
 test "escaped string" {
