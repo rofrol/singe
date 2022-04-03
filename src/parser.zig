@@ -8,20 +8,12 @@ const Token = lexer.Token;
 const Pos = lexer.Pos;
 const Lexer = lexer.Lexer;
 
-const Ident = struct {
-    pos: Pos,
-    fn string(i: Ident, input: []const u8) []const u8 {
-        return i.pos.string(input);
-    }
-};
-
 const Statement = struct {
-    token: Token,
-    ident: Ident,
+    ident: Token,
     value: Expr,
 };
 
-const Expr = union {
+const Expr = union(enum) {
     value: Token,
     functon: []Statement,
 };
@@ -64,62 +56,60 @@ const Parser = struct {
         };
     }
 
-    pub fn deinit(s: *Self) void {
-        s.err.deinit();
+    pub fn deinit(self: *Self) void {
+        self.err.deinit();
     }
 
-    pub fn writeErr(s: *Self, writer: anytype) void {
-        for (s.err.errors.items) |err| {
+    pub fn writeErr(self: *Self, writer: anytype) void {
+        for (self.err.errors.items) |err| {
             writer.writeAll(err) catch {};
             writer.writeAll("\n") catch {};
         }
     }
 
-    pub fn next(s: *Self) ?Statement {
-        const tok = s.lex.next();
-        switch (tok) {
-            .let => return s.parseLet(tok.let),
-            else => s.err.print("expected 'let' but got '{s}' at {s}", .{ tok, tok.pos().string(s.lex.input) }),
+    pub fn next(self: *Self) ?Statement {
+        const tok = self.lex.next();
+        switch (tok.kind) {
+            .let => return self.parseLet(),
+            else => self.err.print("expected 'let' but got '{s}' at {s}", .{ tok, tok.string(self.lex.input) }),
         }
         return null;
     }
 
-    fn parseLet(s: *Self, let: Pos) ?Statement {
-        const ident = s.lex.next();
-        if (!s.expectAnyTok(&.{Token.parse("a")}, ident)) return null;
+    fn parseLet(self: *Self) ?Statement {
+        const ident = self.lex.next();
+        if (!self.expectAnyTok(ident, &.{Token.Kind.ident})) return null;
 
-        const assign = s.lex.next();
-        if (!s.expectAnyTok(&.{Token.parse("=")}, assign)) return null;
+        const assign = self.lex.next();
+        if (!self.expectAnyTok(assign, &.{Token.Kind.assign})) return null;
 
-        const value = s.lex.next();
-        if (!(s.expectAnyTok(&.{ Token.parse("0"), Token.parse("\"\"") }, value))) return null;
+        const value = self.lex.next();
+        if (!(self.expectAnyTok(value, &.{ Token.Kind.int, Token.Kind.string }))) return null;
 
-        const semco = s.lex.next();
-        if (!s.expectAnyTok(&.{Token.parse(";")}, semco)) return null;
+        const semco = self.lex.next();
+        if (!self.expectAnyTok(semco, &.{Token.Kind.semicolon})) return null;
 
-        return Statement{
-            .token = .{ .let = let },
-            .ident = Ident{ .pos = ident.pos() },
-            .value = Expr{ .value = value },
-        };
+        return Statement{ .ident = ident, .value = Expr{ .value = value } };
     }
 
-    fn expectAnyTok(self: *Self, expect: []const Token, got: Token) bool {
-        for (expect) |e| if (@enumToInt(got) == @enumToInt(e)) return true;
+    fn expectAnyTok(self: *Self, got: Token, want: []const Token.Kind) bool {
+        for (want) |w| if (@enumToInt(got.kind) == @enumToInt(w)) return true;
 
-        self.err.print("expected '{s}' but got '{s}' at {s}", .{ expect, got, got.pos().string(self.lex.input) });
+        const fp = got.filePos(self.lex.input);
+        self.err.print("expected any of '{any}' but got '{T}' at {d}:{d}", .{ want, got.kind, fp.line, fp.col });
         return false;
     }
 };
 
 test "let assign value" {
-    const input = "let a = \"hello world\";";
+    const input =
+        \\let a = "hello world";
+    ;
     var p = Parser.init(testing.allocator, input);
     defer p.deinit();
     if (p.next()) |node| {
-        try testing.expectEqualStrings(node.token.pos().string(input), "let");
-        try testing.expectEqualStrings(node.ident.pos.string(input), "a");
-        try testing.expectEqualStrings(node.value.value.pos().string(input), "\"hello world\"");
+        try testing.expectEqualStrings(node.ident.string(input), "a");
+        try testing.expectEqualStrings(node.value.value.string(input), "\"hello world\"");
     }
 
     if (p.err.errors.items.len != 0) {
@@ -135,9 +125,8 @@ test "no semicolon" {
     var p = Parser.init(testing.allocator, input);
     defer p.deinit();
     if (p.next()) |node| {
-        try testing.expectEqualStrings(node.token.pos().string(input), "let");
-        try testing.expectEqualStrings(node.ident.pos.string(input), "a");
-        try testing.expectEqualStrings(node.value.value.pos().string(input), "12");
+        try testing.expectEqualStrings(node.ident.string(input), "a");
+        try testing.expectEqualStrings(node.value.value.string(input), "12");
     }
 
     if (p.err.errors.items.len < 1) std.log.err("expected an error but got {}", .{p.err.errors.items.len});

@@ -2,115 +2,57 @@ const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
 
-pub const Pos = struct {
-    start: usize,
-    end: usize,
+pub const Token = struct {
+    start_pos: u32,
+    len: u24 = 1,
+    kind: Kind,
+    pub const Kind = enum {
+        illegal,
+        eof,
 
-    pub fn z() Pos {
-        return Pos.new(0, 0);
-    }
+        // Identifiers & literals
+        ident,
+        int,
+        string, // contains the string delims
 
-    pub fn new(start: usize, end: usize) Pos {
-        return Pos{ .start = start, .end = end };
-    }
+        // op
+        assign,
+        plus,
+        minus,
+        eq,
+        neq,
+        lt,
+        gt,
+        ge,
+        le,
+        slash,
+        star,
+        bang,
+        percent,
 
-    pub fn string(p: Pos, input: []const u8) []const u8 {
-        return input[p.start..p.end];
-    }
+        // Delimiters
+        lparen,
+        rparen,
+        lbrace,
+        rbrace,
+        lbracket,
+        rbracket,
+        semicolon,
+        comma,
+        dot,
+        colon,
 
-    pub fn len(p: Pos) usize {
-        return p.end - p.start;
-    }
-};
-
-pub const Token = union(enum) {
-    illegal: Pos,
-    eof: Pos,
-
-    // Identifiers & literals
-    ident: Pos,
-    int: Pos,
-    string: Pos, // contains the string delims
-
-    // op
-    assign: Pos,
-    plus: Pos,
-    minus: Pos,
-    eq: Pos,
-    neq: Pos,
-    lt: Pos,
-    gt: Pos,
-    ge: Pos,
-    le: Pos,
-    slash: Pos,
-    star: Pos,
-    bang: Pos,
-    percent: Pos,
-
-    // Delimiters
-    lparen: Pos,
-    rparen: Pos,
-    lbrace: Pos,
-    rbrace: Pos,
-    lbracket: Pos,
-    rbracket: Pos,
-    semicolon: Pos,
-    comma: Pos,
-    dot: Pos,
-    colon: Pos,
-
-    // Keywords
-    func: Pos,
-    let: Pos,
-    @"if": Pos,
-    @"else": Pos,
-    @"return": Pos,
-    @"true": Pos,
-    @"false": Pos,
-    @"nil": Pos,
-    @"for": Pos,
-
-    pub fn pos(t: Token) Pos {
-        switch (t) {
-            .illegal => return t.illegal,
-            .eof => return t.eof,
-            .ident => return t.ident,
-            .int => return t.int,
-            .string => return t.string,
-            .assign => return t.assign,
-            .plus => return t.plus,
-            .minus => return t.minus,
-            .eq => return t.eq,
-            .neq => return t.neq,
-            .lt => return t.lt,
-            .gt => return t.gt,
-            .ge => return t.ge,
-            .le => return t.le,
-            .slash => return t.slash,
-            .star => return t.star,
-            .percent => return t.percent,
-            .bang => return t.bang,
-            .lparen => return t.lparen,
-            .rparen => return t.rparen,
-            .lbrace => return t.lbrace,
-            .rbrace => return t.rbrace,
-            .lbracket => return t.lbracket,
-            .rbracket => return t.rbracket,
-            .semicolon => return t.semicolon,
-            .comma => return t.comma,
-            .dot => return t.dot,
-            .colon => return t.colon,
-            .func => return t.func,
-            .let => return t.let,
-            .@"if" => return t.@"if",
-            .@"else" => return t.@"else",
-            .@"return" => return t.@"return",
-            .@"true" => return t.@"true",
-            .@"false" => return t.@"false",
-            .@"nil" => return t.@"nil",
-            .@"for" => return t.@"for",
-        }
-    }
+        // Keywords
+        func,
+        let,
+        @"if",
+        @"else",
+        @"return",
+        @"true",
+        @"false",
+        @"nil",
+        @"for",
+    };
 
     /// like parsePos, but starts at offset 0
     pub fn parse(input: []const u8) Token {
@@ -118,83 +60,116 @@ pub const Token = union(enum) {
     }
 
     /// parse the next token from offset
-    pub fn parsePos(input: []const u8, offset: usize) Token {
-        if (offset > input.len) return Token{ .eof = Pos.new(offset, offset) };
+    pub fn parsePos(input: []const u8, offset: u32) Token {
+        if (offset > input.len) return Token{ .kind = .eof, .start_pos = offset };
         if (switch (input[offset]) {
-            '(' => Token{ .lparen = Pos.new(offset, offset + 1) },
-            ')' => Token{ .rparen = Pos.new(offset, offset + 1) },
-            '{' => Token{ .lbracket = Pos.new(offset, offset + 1) },
-            '}' => Token{ .rbracket = Pos.new(offset, offset + 1) },
-            '[' => Token{ .lbrace = Pos.new(offset, offset + 1) },
-            ']' => Token{ .rbrace = Pos.new(offset, offset + 1) },
-            ';' => Token{ .semicolon = Pos.new(offset, offset + 1) },
-            ',' => Token{ .comma = Pos.new(offset, offset + 1) },
-            '.' => Token{ .dot = Pos.new(offset, offset + 1) },
-            ':' => Token{ .colon = Pos.new(offset, offset + 1) },
-            '+' => Token{ .plus = Pos.new(offset, offset + 1) },
+            '(' => Token{ .kind = .lparen, .start_pos = offset },
+            ')' => Token{ .kind = .rparen, .start_pos = offset },
+            '{' => Token{ .kind = .lbracket, .start_pos = offset },
+            '}' => Token{ .kind = .rbracket, .start_pos = offset },
+            '[' => Token{ .kind = .lbrace, .start_pos = offset },
+            ']' => Token{ .kind = .rbrace, .start_pos = offset },
+            ';' => Token{ .kind = .semicolon, .start_pos = offset },
+            ',' => Token{ .kind = .comma, .start_pos = offset },
+            '.' => Token{ .kind = .dot, .start_pos = offset },
+            ':' => Token{ .kind = .colon, .start_pos = offset },
+            '+' => Token{ .kind = .plus, .start_pos = offset },
             '=' => if (offset + 1 < input.len and input[offset + 1] == '=')
-                return Token{ .eq = Pos.new(offset, offset + 2) }
+                return Token{ .kind = .eq, .start_pos = offset, .len = 2 }
             else
-                Token{ .assign = Pos.new(offset, offset + 1) },
-            '-' => Token{ .minus = Pos.new(offset, offset + 1) },
+                Token{ .kind = .assign, .start_pos = offset },
+            '-' => Token{ .kind = .minus, .start_pos = offset },
             '<' => if (offset + 1 < input.len and input[offset + 1] == '=')
-                return Token{ .le = Pos.new(offset, offset + 2) }
+                return Token{ .kind = .le, .start_pos = offset, .len = 2 }
             else
-                Token{ .lt = Pos.new(offset, offset + 1) },
+                Token{ .kind = .lt, .start_pos = offset },
             '>' => if (offset + 1 < input.len and input[offset + 1] == '=')
-                return Token{ .ge = Pos.new(offset, offset + 2) }
+                return Token{ .kind = .ge, .start_pos = offset, .len = 2 }
             else
-                Token{ .gt = Pos.new(offset, offset + 1) },
-            '*' => Token{ .star = Pos.new(offset, offset + 1) },
-            '/' => Token{ .slash = Pos.new(offset, offset + 1) },
-            '%' => Token{ .percent = Pos.new(offset, offset + 1) },
+                Token{ .kind = .gt, .start_pos = offset },
+            '*' => Token{ .kind = .star, .start_pos = offset },
+            '/' => Token{ .kind = .slash, .start_pos = offset },
+            '%' => Token{ .kind = .percent, .start_pos = offset },
             '!' => if (offset + 1 < input.len and input[offset + 1] == '=')
-                Token{ .neq = Pos.new(offset, offset + 2) }
+                Token{ .kind = .neq, .start_pos = offset, .len = 2 }
             else
-                Token{ .bang = Pos.new(offset, offset + 1) },
+                Token{ .kind = .bang, .start_pos = offset },
             '"' => {
-                const start = offset + 1;
+                var i: u32 = offset + 1;
+                while (i < input.len and (input[i] != '"' or input[i - 1] == '\\')) : (i += 1) {}
 
-                var end = start;
-                while (end < input.len and (input[end] != '"' or input[end - 1] == '\\')) : (end += 1) {}
-
-                if (end == input.len) return Token{ .illegal = Pos.new(offset, end + 1) };
-                return Token{ .string = Pos.new(offset, end + 1) };
+                if (i == input.len) return Token{ .kind = .illegal, .start_pos = offset, .len = 0 };
+                return Token{ .kind = .string, .start_pos = offset, .len = @intCast(u24, i - offset + 1) };
             },
             else => null,
         }) |tok| return tok;
 
-        const t = if (mem.tokenize(u8, input[offset..], " \t\n\r;(){}[],.:+=+*-/%").next()) |n| n else return Token{ .eof = Pos.new(offset, offset) };
+        var tokenizer = mem.tokenize(u8, input[offset..], " \t\n\r;(){}[],.:+=+*-/%");
+        const t = if (tokenizer.next()) |n| n else return Token{ .kind = .eof, .start_pos = offset, .len = 0 };
+
         return if (mem.eql(u8, t, "let"))
-            Token{ .let = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .let, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "fn"))
-            Token{ .func = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .func, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (containsOnlyAnyOf(u8, t, "0123456789"))
-            Token{ .int = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .int, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "<="))
-            Token{ .le = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .le, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, ">="))
-            Token{ .ge = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .ge, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "=="))
-            Token{ .eq = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .eq, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "!="))
-            Token{ .neq = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .neq, .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "true"))
-            Token{ .@"true" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"true", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "false"))
-            Token{ .@"false" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"false", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "nil"))
-            Token{ .@"nil" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"nil", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "if"))
-            Token{ .@"if" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"if", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "else"))
-            Token{ .@"else" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"else", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "return"))
-            Token{ .@"return" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"return", .start_pos = offset, .len = @intCast(u24, t.len) }
         else if (mem.eql(u8, t, "for"))
-            Token{ .@"for" = Pos.new(offset, offset + t.len) }
+            Token{ .kind = .@"for", .start_pos = offset, .len = @intCast(u24, t.len) }
         else
-            Token{ .ident = Pos.new(offset, offset + t.len) };
+            Token{ .kind = .ident, .start_pos = offset, .len = @intCast(u24, t.len) };
+    }
+
+    pub fn string(t: Token, input: []const u8) []const u8 {
+        return input[t.start_pos..(t.start_pos + t.len)];
+    }
+
+    /// Returns the line & column of the given position in the input.
+    /// One indexed
+    const FilePos = struct {
+        line: u32 = 1,
+        col: u32 = 1,
+    };
+
+    pub fn filePos(t: Token, input: []const u8) FilePos {
+        var f = FilePos{};
+
+        for (input[0..t.start_pos]) |c| {
+            if (c == '\n') {
+                f.line += 1;
+                f.col = 1;
+            } else f.col += 1;
+        }
+
+        return f;
+    }
+
+    test "file pos" {
+        var input =
+            \\let foo = "bar";
+            \\if ("baz" != "")
+        ;
+        var tok = Token.parsePos(input, 21);
+        try testing.expectEqual(tok.filePos(input), FilePos{ .line = 2, .col = 5 });
     }
 };
 
@@ -215,7 +190,7 @@ test "containsOnlyAnyOf" {
 
 pub const Lexer = struct {
     input: []const u8,
-    offset: usize = 0,
+    offset: u32 = 0,
 
     const Self = @This();
     pub fn init(input: []const u8) Self {
@@ -226,11 +201,11 @@ pub const Lexer = struct {
         while (self.offset < self.input.len) {
             self.eatWhileAnyOf(" \t\r\n");
             const t = Token.parsePos(self.input, self.offset);
-            self.offset += t.pos().len();
+            self.offset += t.len;
             return t;
         }
 
-        return Token{ .eof = Pos.new(self.offset, self.offset) };
+        return Token{ .kind = .eof, .start_pos = self.offset, .len = 0 };
     }
 
     fn eatWhileAnyOf(self: *Self, needle_stack: []const u8) void {
@@ -242,63 +217,63 @@ pub const Lexer = struct {
 
 test "empty" {
     var l = Lexer.init("");
-    try testing.expect(l.next() == .eof);
+    try testing.expect(l.next().kind == .eof);
 }
 
 test ";;;" {
     var l = Lexer.init(";;;");
-    try testing.expect(l.next() == .semicolon);
-    try testing.expect(l.next() == .semicolon);
-    try testing.expect(l.next() == .semicolon);
-    try testing.expect(l.next() == .eof);
+    try testing.expect(l.next().kind == .semicolon);
+    try testing.expect(l.next().kind == .semicolon);
+    try testing.expect(l.next().kind == .semicolon);
+    try testing.expect(l.next().kind == .eof);
 }
 
 test "let" {
     var l = Lexer.init("let");
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-    try testing.expectEqual(l.next(), Token{ .eof = Pos.new(3, 3) });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 0, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .eof, .start_pos = 3, .len = 0 });
 }
 
 test "let expr" {
     var l = Lexer.init("let a = 27;");
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 5) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(6, 7) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(8, 10) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(10, 11) });
-    try testing.expectEqual(l.next(), Token{ .eof = Pos.new(11, 11) });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 0, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 6 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 8, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 10 });
+    try testing.expectEqual(l.next(), Token{ .kind = .eof, .start_pos = 11, .len = 0 });
 }
 
 test "let string" {
     var l = Lexer.init(
         \\let hello_world = "hello world";
     );
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 15) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(16, 17) });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 0, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 4, .len = 11 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 16 });
     const hello_world = l.next();
-    try testing.expectEqual(hello_world, Token{ .string = Pos.new(18, 31) });
-    try testing.expectEqualStrings(hello_world.string.string(l.input), "\"hello world\"");
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(31, 32) });
+    try testing.expectEqual(hello_world, Token{ .kind = .string, .start_pos = 18, .len = 13 });
+    try testing.expectEqualStrings(hello_world.string(l.input), "\"hello world\"");
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 31 });
 }
 
 test "math" {
     var l = Lexer.init("let y = 7*7 + 42/2 - 14 % 5;");
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 5) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(6, 7) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(8, 9) });
-    try testing.expectEqual(l.next(), Token{ .star = Pos.new(9, 10) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(10, 11) });
-    try testing.expectEqual(l.next(), Token{ .plus = Pos.new(12, 13) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(14, 16) });
-    try testing.expectEqual(l.next(), Token{ .slash = Pos.new(16, 17) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(17, 18) });
-    try testing.expectEqual(l.next(), Token{ .minus = Pos.new(19, 20) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(21, 23) });
-    try testing.expectEqual(l.next(), Token{ .percent = Pos.new(24, 25) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(26, 27) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(27, 28) });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 0, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 6 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 8 });
+    try testing.expectEqual(l.next(), Token{ .kind = .star, .start_pos = 9 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 10 });
+    try testing.expectEqual(l.next(), Token{ .kind = .plus, .start_pos = 12 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 14, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .slash, .start_pos = 16 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 17 });
+    try testing.expectEqual(l.next(), Token{ .kind = .minus, .start_pos = 19 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 21, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .percent, .start_pos = 24 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 26 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 27 });
 }
 
 test "escaped string" {
@@ -306,10 +281,8 @@ test "escaped string" {
         \\"\"hello world\""
     );
     const hello_world = l.next();
-    try testing.expectEqual(hello_world, Token{ .string = Pos.new(0, 17) });
-    try testing.expectEqualStrings(hello_world.string.string(l.input),
-        \\"\"hello world\""
-    );
+    try testing.expectEqual(hello_world, Token{ .kind = .string, .start_pos = 0, .len = 17 });
+    try testing.expectEqualStrings(hello_world.string(l.input), l.input);
 }
 
 test "most of the syntax" {
@@ -336,85 +309,85 @@ test "most of the syntax" {
         \\5 <= 10;
         \\12 >= 10;
     );
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(0, 3) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(4, 8) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(9, 10) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(11, 12) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(12, 13) });
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(14, 17) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(18, 21) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(22, 23) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(24, 26) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(26, 27) });
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(29, 32) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(33, 36) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(37, 38) });
-    try testing.expectEqual(l.next(), Token{ .func = Pos.new(39, 41) });
-    try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(41, 42) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(42, 43) });
-    try testing.expectEqual(l.next(), Token{ .comma = Pos.new(43, 44) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(45, 46) });
-    try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(46, 47) });
-    try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(48, 49) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(52, 53) });
-    try testing.expectEqual(l.next(), Token{ .plus = Pos.new(54, 55) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(56, 57) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(57, 58) });
-    try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(59, 60) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(60, 61) });
-    try testing.expectEqual(l.next(), Token{ .let = Pos.new(63, 66) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(67, 73) });
-    try testing.expectEqual(l.next(), Token{ .assign = Pos.new(74, 75) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(76, 79) });
-    try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(79, 80) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(80, 84) });
-    try testing.expectEqual(l.next(), Token{ .comma = Pos.new(84, 85) });
-    try testing.expectEqual(l.next(), Token{ .ident = Pos.new(86, 89) });
-    try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(89, 90) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(90, 91) });
-    try testing.expectEqual(l.next(), Token{ .bang = Pos.new(92, 93) });
-    try testing.expectEqual(l.next(), Token{ .minus = Pos.new(93, 94) });
-    try testing.expectEqual(l.next(), Token{ .slash = Pos.new(94, 95) });
-    try testing.expectEqual(l.next(), Token{ .star = Pos.new(95, 96) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(96, 97) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(97, 98) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(99, 100) });
-    try testing.expectEqual(l.next(), Token{ .lt = Pos.new(101, 102) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(103, 105) });
-    try testing.expectEqual(l.next(), Token{ .gt = Pos.new(106, 107) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(108, 109) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(109, 110) });
-    try testing.expectEqual(l.next(), Token{ .@"if" = Pos.new(112, 114) });
-    try testing.expectEqual(l.next(), Token{ .lparen = Pos.new(115, 116) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(116, 117) });
-    try testing.expectEqual(l.next(), Token{ .lt = Pos.new(118, 119) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(120, 122) });
-    try testing.expectEqual(l.next(), Token{ .rparen = Pos.new(122, 123) });
-    try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(124, 125) });
-    try testing.expectEqual(l.next(), Token{ .@"return" = Pos.new(128, 134) });
-    try testing.expectEqual(l.next(), Token{ .@"true" = Pos.new(135, 139) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(139, 140) });
-    try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(141, 142) });
-    try testing.expectEqual(l.next(), Token{ .@"else" = Pos.new(143, 147) });
-    try testing.expectEqual(l.next(), Token{ .lbracket = Pos.new(148, 149) });
-    try testing.expectEqual(l.next(), Token{ .@"return" = Pos.new(152, 158) });
-    try testing.expectEqual(l.next(), Token{ .@"false" = Pos.new(159, 164) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(164, 165) });
-    try testing.expectEqual(l.next(), Token{ .rbracket = Pos.new(166, 167) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(169, 171) });
-    try testing.expectEqual(l.next(), Token{ .eq = Pos.new(172, 174) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(175, 177) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(177, 178) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(179, 181) });
-    try testing.expectEqual(l.next(), Token{ .neq = Pos.new(182, 184) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(185, 186) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(186, 187) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(188, 189) });
-    try testing.expectEqual(l.next(), Token{ .le = Pos.new(190, 192) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(193, 195) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(195, 196) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(197, 199) });
-    try testing.expectEqual(l.next(), Token{ .ge = Pos.new(200, 202) });
-    try testing.expectEqual(l.next(), Token{ .int = Pos.new(203, 205) });
-    try testing.expectEqual(l.next(), Token{ .semicolon = Pos.new(205, 206) });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 0, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 4, .len = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 9 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 11 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 12 });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 14, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 18, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 22 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 24, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 26 });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 29, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 33, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 37 });
+    try testing.expectEqual(l.next(), Token{ .kind = .func, .start_pos = 39, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lparen, .start_pos = 41 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 42 });
+    try testing.expectEqual(l.next(), Token{ .kind = .comma, .start_pos = 43 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 45 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rparen, .start_pos = 46 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lbracket, .start_pos = 48 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 52 });
+    try testing.expectEqual(l.next(), Token{ .kind = .plus, .start_pos = 54 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 56 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 57 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rbracket, .start_pos = 59 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 60 });
+    try testing.expectEqual(l.next(), Token{ .kind = .let, .start_pos = 63, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 67, .len = 6 });
+    try testing.expectEqual(l.next(), Token{ .kind = .assign, .start_pos = 74 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 76, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lparen, .start_pos = 79 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 80, .len = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .comma, .start_pos = 84 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ident, .start_pos = 86, .len = 3 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rparen, .start_pos = 89 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 90 });
+    try testing.expectEqual(l.next(), Token{ .kind = .bang, .start_pos = 92 });
+    try testing.expectEqual(l.next(), Token{ .kind = .minus, .start_pos = 93 });
+    try testing.expectEqual(l.next(), Token{ .kind = .slash, .start_pos = 94 });
+    try testing.expectEqual(l.next(), Token{ .kind = .star, .start_pos = 95 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 96 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 97 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 99 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lt, .start_pos = 101 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 103, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .gt, .start_pos = 106 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 108 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 109 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"if", .start_pos = 112, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lparen, .start_pos = 115 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 116 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lt, .start_pos = 118 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 120, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rparen, .start_pos = 122 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lbracket, .start_pos = 124 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"return", .start_pos = 128, .len = 6 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"true", .start_pos = 135, .len = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 139 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rbracket, .start_pos = 141 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"else", .start_pos = 143, .len = 4 });
+    try testing.expectEqual(l.next(), Token{ .kind = .lbracket, .start_pos = 148 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"return", .start_pos = 152, .len = 6 });
+    try testing.expectEqual(l.next(), Token{ .kind = .@"false", .start_pos = 159, .len = 5 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 164 });
+    try testing.expectEqual(l.next(), Token{ .kind = .rbracket, .start_pos = 166 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 169, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .eq, .start_pos = 172, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 175, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 177 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 179, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .neq, .start_pos = 182, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 185 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 186 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 188 });
+    try testing.expectEqual(l.next(), Token{ .kind = .le, .start_pos = 190, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 193, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 195 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 197, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .ge, .start_pos = 200, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .int, .start_pos = 203, .len = 2 });
+    try testing.expectEqual(l.next(), Token{ .kind = .semicolon, .start_pos = 205 });
 }
