@@ -93,7 +93,7 @@ const Parser = struct {
     }
 
     fn expectAnyTok(self: *Self, got: Token, want: []const Token.Kind) bool {
-        for (want) |w| if (@enumToInt(got.kind) == @enumToInt(w)) return true;
+        for (want) |w| if (got.kind == w) return true;
 
         const fp = got.filePos(self.lex.input);
         self.err.print("expected any of '{any}' but got '{T}' at {d}:{d}", .{ want, got.kind, fp.line, fp.col });
